@@ -2,7 +2,7 @@
 // @name         班友计数器
 // @namespace    https://github.com/imagebuilder1837/bangumi-friends-count
 // @version      0.1.0
-// @description  好友页显示好友总数。
+// @description  在好友页显示好友总数。
 // @author       imagebuilder1837
 // @match        https://bgm.tv/user/*/friends
 // @match        https://bgm.tv/user/*/rev_friends
