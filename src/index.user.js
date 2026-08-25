@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         班友计数器
 // @namespace    https://github.com/imagebuilder1837/bangumi-friends-count
-// @version      0.1.0
-// @description  在好友页显示好友总数。
+// @version      0.1.1
+// @description  在好友/反向好友页显示好友/反向好友总数。
 // @author       imagebuilder1837
 // @match        https://bgm.tv/user/*/friends
 // @match        https://bgm.tv/user/*/rev_friends
@@ -28,5 +28,6 @@
   }
 
   const friendsCount = friendsList.querySelectorAll(':scope > li.user').length;
-  friendsTab.textContent = `好友（${friendsCount} 人）`;
+  const label = friendsTab.href.endsWith('/rev_friends') ? '反向好友' : '好友';
+  friendsTab.textContent = `好友（${friendsCount} 名${label}）`;
 })();
