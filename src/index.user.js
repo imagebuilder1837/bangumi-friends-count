@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         班友计数器
+// @name         Bangumi 好友计数
 // @namespace    https://github.com/imagebuilder1837/bangumi-friends-count
 // @version      0.1.2
 // @description  在好友/反向好友页显示好友/反向好友总数。
