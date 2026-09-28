@@ -25,7 +25,6 @@
   const COUNT_SELECTOR = "[data-bangumi-friends-count]";
   const COUNT_ATTRIBUTE = "data-bangumi-friends-count";
   const CLEANUP_PROPERTY = "__bangumiFriendsCountCleanup";
-  const REVERSE_TAB_WAIT_MS = 10_000;
 
   function initialize(runtime = {}) {
     const pageWindow =
@@ -41,15 +40,6 @@
       runtime.MutationObserver ??
       pageWindow?.MutationObserver ??
       (typeof MutationObserver === "undefined" ? undefined : MutationObserver);
-    const schedule =
-      runtime.setTimeout ??
-      pageWindow?.setTimeout ??
-      (typeof setTimeout === "undefined" ? undefined : setTimeout);
-    const cancel =
-      runtime.clearTimeout ??
-      pageWindow?.clearTimeout ??
-      (typeof clearTimeout === "undefined" ? undefined : clearTimeout);
-
     if (!pageDocument || !pageLocation) return;
 
     const pathname = pageLocation.pathname;
@@ -81,36 +71,24 @@
     countNode.setAttribute(COUNT_ATTRIBUTE, "");
     countNode.textContent = `（${friendsCount} 名${label}）`;
     targetTab.append(countNode);
-
-    if (!isReverse || reverseTab) return;
-    if (!MutationObserverConstructor || !schedule || !cancel) return;
-
-    let observer;
-    let timeoutId;
-    let stopped = false;
-
-    const stopWaiting = () => {
-      if (stopped) return;
-      stopped = true;
-      observer?.disconnect();
-      if (timeoutId !== undefined) cancel(timeoutId);
-      if (countNode[CLEANUP_PROPERTY] === stopWaiting) {
-        delete countNode[CLEANUP_PROPERTY];
-      }
+    const syncTab = () => {
+      const currentTab = isReverse
+        ? navTabs.querySelector(REVERSE_TAB_SELECTOR) || friendsTab
+        : friendsTab;
+      if (countNode.parentElement !== currentTab) currentTab.append(countNode);
+      countNode.hidden = !currentTab.classList.contains("focus");
     };
+    syncTab();
 
-    const moveToReverseTab = () => {
-      const newReverseTab = navTabs.querySelector(REVERSE_TAB_SELECTOR);
-      if (!newReverseTab) return;
-      stopWaiting();
-      newReverseTab.append(countNode);
-    };
-
-    observer = new MutationObserverConstructor(moveToReverseTab);
-    countNode[CLEANUP_PROPERTY] = stopWaiting;
-    observer.observe(navTabs, { childList: true, subtree: true });
-    timeoutId = schedule(stopWaiting, REVERSE_TAB_WAIT_MS);
-    moveToReverseTab();
+    if (!MutationObserverConstructor) return;
+    const observer = new MutationObserverConstructor(syncTab);
+    countNode[CLEANUP_PROPERTY] = () => observer.disconnect();
+    observer.observe(navTabs, {
+      attributes: true,
+      attributeFilter: ["class"],
+      childList: true,
+      subtree: true,
+    });
   }
 
   const core = { initialize };

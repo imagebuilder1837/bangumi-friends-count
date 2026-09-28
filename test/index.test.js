@@ -28,6 +28,10 @@ class Element {
     this.setAttribute("class", value);
   }
 
+  get classList() {
+    return { contains: (name) => this.className.split(/\s+/).includes(name) };
+  }
+
   get textContent() {
     return this.children
       .map((child) =>
@@ -160,6 +164,8 @@ class MutationObserverStub {
 
   observe(target, options) {
     assert.equal(options.childList, true);
+    assert.equal(options.attributes, true);
+    assert.deepEqual(options.attributeFilter, ["class"]);
     assert.equal(options.subtree, true);
     this.target = target;
     this.connected = true;
@@ -180,26 +186,6 @@ class MutationObserverStub {
   static reset() {
     MutationObserverStub.active.clear();
   }
-}
-
-function createTimers() {
-  let nextId = 0;
-  const pending = new Map();
-  return {
-    pending,
-    setTimeout(callback, delay) {
-      assert.equal(delay, 10_000);
-      const id = ++nextId;
-      pending.set(id, callback);
-      return id;
-    },
-    clearTimeout(id) {
-      pending.delete(id);
-    },
-    runAll() {
-      for (const callback of [...pending.values()]) callback();
-    },
-  };
 }
 
 function createPage({ pathname, withReverse = false, withNav = true } = {}) {
@@ -232,20 +218,16 @@ function createPage({ pathname, withReverse = false, withNav = true } = {}) {
   }
   document.children.push(friendsList);
 
-  const timers = createTimers();
   const page = {
     document,
     nav,
     friendsTab,
     friendsList,
-    timers,
     location: { pathname },
     runtime: {
       document,
       location: { pathname },
       MutationObserver: MutationObserverStub,
-      setTimeout: timers.setTimeout,
-      clearTimeout: timers.clearTimeout,
     },
   };
 
@@ -294,8 +276,35 @@ test("ordinary friends page counts direct users without touching the tab", () =>
   assert.equal(page.friendsTab.children[0], nativeLabel);
   assert.equal(page.friendsTab.className, originalClass);
   assert.equal(countNodes(page).length, 1);
-  assert.equal(MutationObserverStub.active.size, 0);
-  assert.equal(page.timers.pending.size, 0);
+  assert.equal(MutationObserverStub.active.size, 1);
+});
+
+test("count follows the focus of its host tab within the same page", () => {
+  MutationObserverStub.reset();
+  const page = createPage({ pathname: "/user/foo/friends" });
+
+  run(page);
+  const countNode = countNodes(page)[0];
+  assert.equal(countNode.hidden, false);
+
+  page.friendsTab.className = "native";
+  MutationObserverStub.flush();
+  assert.equal(countNode.hidden, true);
+  assert.equal(countNode.textContent, "（2 名好友）");
+
+  page.friendsTab.className = "focus native";
+  MutationObserverStub.flush();
+  assert.equal(countNode.hidden, false);
+});
+
+test("a tab without focus initially hides its count", () => {
+  MutationObserverStub.reset();
+  const page = createPage({ pathname: "/user/foo/friends" });
+  page.friendsTab.className = "native";
+
+  run(page);
+  assert.equal(countNodes(page)[0].hidden, true);
+  assert.equal(countNodes(page)[0].textContent, "（2 名好友）");
 });
 
 test("reverse page falls back to the friends tab when navigation is absent", () => {
@@ -306,12 +315,30 @@ test("reverse page falls back to the friends tab when navigation is absent", () 
 
   assert.equal(page.friendsTab.textContent, "好友（2 名反向好友）");
   assert.equal(page.document.querySelector('a[href$="/rev_friends"]'), null);
+  assert.equal(countNodes(page)[0].hidden, false);
   assert.equal(MutationObserverStub.active.size, 1);
-  assert.equal(page.timers.pending.size, 1);
 
-  page.timers.runAll();
-  assert.equal(MutationObserverStub.active.size, 0);
-  assert.equal(page.timers.pending.size, 0);
+  page.friendsTab.className = "native";
+  MutationObserverStub.flush();
+  assert.equal(countNodes(page)[0].hidden, true);
+});
+
+test("reverse count moves whenever its tab appears and follows its focus", () => {
+  MutationObserverStub.reset();
+  const page = createPage({ pathname: "/user/foo/rev_friends" });
+  run(page);
+  const countNode = countNodes(page)[0];
+
+  const reverseTab = addReverseTab(page);
+  page.friendsTab.className = "native";
+  reverseTab.className = "reverse";
+  MutationObserverStub.flush();
+  assert.equal(countNode.parentElement, reverseTab);
+  assert.equal(countNode.hidden, true);
+
+  reverseTab.className = "focus reverse";
+  MutationObserverStub.flush();
+  assert.equal(countNode.hidden, false);
 });
 
 test("reverse page uses an existing reverse tab immediately", () => {
@@ -328,8 +355,7 @@ test("reverse page uses an existing reverse tab immediately", () => {
   assert.equal(countNodes(page)[0].parentElement, page.reverseTab);
   assert.equal(page.friendsTab.className, friendsClass);
   assert.equal(page.reverseTab.className, reverseClass);
-  assert.equal(MutationObserverStub.active.size, 0);
-  assert.equal(page.timers.pending.size, 0);
+  assert.equal(MutationObserverStub.active.size, 1);
 });
 
 test("count-first execution moves the same node when the reverse tab appears", () => {
@@ -347,11 +373,10 @@ test("count-first execution moves the same node when the reverse tab appears", (
   assert.equal(countNode.textContent, "（2 名反向好友）");
   assert.equal(reverseTab.className, "focus reverse");
   assert.equal(page.friendsTab.className, friendsClass);
-  assert.equal(MutationObserverStub.active.size, 0);
-  assert.equal(page.timers.pending.size, 0);
+  assert.equal(MutationObserverStub.active.size, 1);
 });
 
-test("repeated execution leaves one count node and one short-lived observer", () => {
+test("repeated execution keeps one count node and one active observer", () => {
   MutationObserverStub.reset();
   const page = createPage({ pathname: "/user/foo/rev_friends" });
 
@@ -364,7 +389,6 @@ test("repeated execution leaves one count node and one short-lived observer", ()
   assert.equal(countNodes(page)[0], countNode);
   assert.equal(firstObserver.connected, false);
   assert.equal(MutationObserverStub.active.size, 1);
-  assert.equal(page.timers.pending.size, 1);
 });
 
 test("unsupported paths and missing page elements remain untouched", () => {
